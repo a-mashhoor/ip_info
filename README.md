@@ -1,5 +1,5 @@
 # IP Info
-Simple bash script to ease the usage of [IP API] (https://ip-api.com/) in the Linux CLI
+Simple bash script to ease the usage of [IP API](https://ip-api.com/) in the Linux CLI
 I wrote the script for my personal usage and nothing more
 
 ## Usage:
