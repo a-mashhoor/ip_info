@@ -2,45 +2,87 @@
 
 set -e
 
-if [[ ! $1 ]]; then
+# Main script logic
+main() {
+	local ip
+	if [[ -z $1 ]]; then
+		read -p "Enter the target IP address: " ip
+	else
+		ip=$1
+	fi
 
-	read -p "enter the target IP addr: " IP
-	echo $IP
-	ip=$IP
-else
-	ip=$1
-fi
+	validate_ip "$ip"
 
-address=http://ip-api.com/json/$ip
+    # Fetch IP information
+    local ip_info=$(fetch_ip_info "$ip")
+    local iplocation_info=$(fetch_iplocation_info "$ip")
 
-flds='status,message,continent,continentCode,country,countryCode,region,regionName,city,district,zip,lat,lon,timezone,offset,currency,isp,org,as,asname,reverse,mobile,proxy,hosting,query'
+    # Combine responses
+    local combined_info=$(jq -s '.[0] * .[1]' <<< "$ip_info"$'\n'"$iplocation_info" )
 
-curl -s $address\?fields=$(printf $flds) > tmp1
-curl -s https://api.iplocation.net/\?ip=$ip > tmp2
+    # Check for API errors
+    local response_code=$(jq -r '.response_code' <<< "$combined_info")
+    local status=$(jq -r '.status' <<< "$combined_info")
+
+    if [[ $response_code != 200 ]] || [[ $status != "success" ]]; then
+	    echo "Operation failed due to unsuccessful responses from the IP APIs."
+	    exit 1
+    fi
+
+    # Generate Google Maps link
+    local lat=$(jq -r '.lat' <<< "$ip_info")
+    local lon=$(jq -r '.lon' <<< "$ip_info")
+    local map_link=$(generate_map_link "$lat" "$lon")
+
+    # Add map link to the combined info
+    combined_info=$(jq --arg map_link "$map_link" '. + {"See location on Google Maps": $map_link}' <<< "$combined_info")
+
+    # Output the final result
+    echo "$combined_info" | jq
+
+    # Fetch and display DNS information
+    fetch_dns_info
+}
 
 
-response_status=$(jq -s '.[0] * .[1] | {"The IP info Result": .}' tmp1 tmp2 > tmp3;\
-	jq -r '.[].response_code' tmp3)
+### Functions ###
 
-status_s=$(jq -r '.[].status' tmp3)
+# Function to validate IP address format
+validate_ip() {
+	local ip=$1
+	if [[ ! $ip =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
+		echo "Error: Invalid IP address format."
+		exit 1
+	fi
+}
 
-if [[ $response_status != 200 ]] && [[ status_s != "success" ]]; then
-	echo opreation faild due to unsuccessful responses from the IP APIs
-	rm -f tmp1 tmp2 tmp3
-	exit 1
-fi
+# Function to fetch IP information
+fetch_ip_info() {
+	local ip=$1
+	local fields='status,message,continent,continentCode,country,countryCode,region,regionName,city,district,zip,lat,lon,timezone,offset,currency,isp,org,as,asname,reverse,mobile,proxy,hosting,query'
+	local url="http://ip-api.com/json/$ip?fields=$fields"
+	curl -s "$url"
+}
 
-# I know I can just Use jq -r but I like sed!
-geo_coordinates=$(jq ". | [.lat, .lon]  | @csv " tmp1 | sed 's/"//g')
-map_link="https://www.google.com/maps/search/?api=1&query=$geo_coordinates"
+# Function to fetch additional IP location info
+fetch_iplocation_info() {
+	local ip=$1
+	local url="https://api.iplocation.net/?ip=$ip"
+	curl -s "$url"
+}
 
-jq --arg gc "$map_link" ' .[] += {"See location on Google Maps": $gc }' tmp3
+# Function to generate Google Maps link
+generate_map_link() {
+	local lat=$1
+	local lon=$2
+	echo "https://www.google.com/maps/search/?api=1&query=$lat,$lon"
+}
 
-dnss=$(curl -s -X GET http://edns.ip-api.com/json \
-	| sed 's/href=/\nhref=/g' \
-	| grep href=\" \
-	| sed 's/.*href="//g;s/".*//g')
+# Function to fetch DNS information
+fetch_dns_info() {
+	local dns_url=$(curl -s -X GET http://edns.ip-api.com/json | grep -oP 'href="\K[^"]+')
+	curl -s "$dns_url" | jq
+}
 
-curl -s $dnss | jq
-
-rm -f tmp1 tmp2 tmp3
+# Run the script (Main Driver)
+main "$1"
