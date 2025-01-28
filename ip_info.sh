@@ -50,8 +50,14 @@ main() {
 # Function to validate IP address format
 validate_ip() {
 	local ip=$1
-	if [[ ! $ip =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
-		echo "Error: Invalid IP address format."
+
+	# Regex for IPv4
+	local ipv4_regex='^([0-9]{1,3}\.){3}[0-9]{1,3}$'
+	# Regex for IPv6 (simplified to match valid IPv6 formats)
+	local ipv6_regex='^([0-9a-fA-F]{0,4}:){1,7}[0-9a-fA-F]{0,4}$'
+
+	if [[ ! $ip =~ $ipv4_regex ]] && [[ ! $ip =~ $ipv6_regex ]]; then
+		echo "Error: Invalid IP address format. Must be a valid IPv4 or IPv6 address."
 		exit 1
 	fi
 }
